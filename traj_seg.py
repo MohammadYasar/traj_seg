@@ -8,37 +8,41 @@ import matplotlib as mpl
 from scipy import linalg
 from pylab import savefig
 from mpl_toolkits.mplot3d import Axes3D
-from dtw import dtw
 from scipy.spatial.distance import euclidean
 import sys
 from sys import argv
 
 global root
-root = '/Users/mohammadsaminyasar/Downloads/JIGSAWS/'
+#'/home/uva-dsa1/Downloads/dVRK videos/Knot_Tying/kinematics/AllGestures'
+root = '/home/uva-dsa1/Downloads/dVRK videos/'
 transitions = []
 demonstrations = []
 def readData(dataFile, transcriptFile):
     try:
-        df = pd.read_csv(dataFile, header = None, dtype = np.float64, delimiter = ',')
+        df = pd.read_csv(dataFile, header = None, dtype = np.float64, delimiter = '     ')
         s = df.values.tolist()
         df1 = pd.read_csv(transcriptFile, header = None, delimiter = ' ')
         s1 = df1.values.tolist()
         transcripts = []
         for value in s1:
             transcripts.append([value[0], value[1]])
-
         s = np.array(s)
-        '''new_s = np.zeros((s.shape[0], s.shape[1]/2))
+        '''
+        s = np.array(s)
+        new_s = np.zeros((s.shape[0], s.shape[1]/2))
         for i in range (s.shape[0]):
             for j in range (s.shape[1]/2):
                 new_s[i][j] = s[i][j+s.shape[1]/2]
 
-        s = np.array(new_s)'''
+        s = np.array(new_s)
+
+        '''
         new_s = np.zeros((s.shape[0], 6))
         for i, value in enumerate(s):
             for j in range(3):#s.shape[1]/2):#, s.shape[1]):
                 new_s[i][j] = value[j+38]
                 new_s[i][j+3] = value[j+57]
+
 
         s1 = np.array(transcripts)
 
@@ -93,68 +97,74 @@ def loadDemonstrations(dataFile, transcriptFile, videoFile):
     if len(traj) > 1:
         scaler = preprocessing.StandardScaler().fit(traj)
         joblib.dump(scaler, 'scaler.p')
-        scaler = joblib.load('scaler.p')
+
         traj = scaler.transform(traj)
         #demonstrations.append(traj)
         #transcripts.append(transcript)
         graph_plot(traj, traj, videoFile)
-        clusters(np.array(traj), np.array(transcript))
+        clusters(transcriptFile, np.array(traj), np.array(transcript))
 
-def clusters(demonstrations = None, transcripts = None):
-    #for i in range (demonstrations.shape[0]):
+def clusters(dataFile, demonstrations = None, transcripts = None):
+    """
+    First layer of clustering based on cartesian space
+    """
+    temporal_window = 3
     traj = demonstrations
     transcript = transcripts
     print demonstrations.shape
-    traj = generate_transition_features(traj, 2)
+    traj = generate_transition_features(traj, temporal_window)
     bic =[]
     lowest_bic = 10000000
-    n_components_range = range(6,7)
     cv_types = ['full']
     #print traj.shape
-
+    n_components_range = range(6,7)
     #traj = hist
     n_splits = 2
     traj1, traj2 = np.split(traj,n_splits, axis = 1)
 
     for cv_type in cv_types:
         for n_components in n_components_range:
-
+            gmm = mixture.BayesianGaussianMixture(n_components = 20, max_iter = 10000,covariance_type=cv_type,  tol = 1e-7, weight_concentration_prior = 0.4, random_state = 100)
             #gmm = mixture.DPGMM(n_components = 7, covariance_type='diag', n_iter = 10000, tol= 1e-4)
-            gmm = mixture.GaussianMixture(n_components=n_components, max_iter = 10000,covariance_type=cv_type,  tol = 1e-5)
-            gmm.fit(traj1)
-            results = gmm.predict(traj1)
-            gmm.fit(traj2)
-            results1 = gmm.predict(traj2)
-            best_gmm = gmm
+            #gmm = mixture.GaussianMixture(n_components=n_components, max_iter = 10000,covariance_type=cv_type,  tol = 1e-5)
+            gmm.fit(traj)
+            results = gmm.predict(traj)
+
+            
+	print "L0: Clusters in DP-GMM", len(set(results))
     score = 0
     cp_times = []
     prev = 0
-    print "checking results"
-    print results
+    results = np.transpose(np.matrix(results))
+    print "results: {} traj: {}".format(results.shape, traj.shape)
+    clusters = np.sort(np.concatenate((results,traj), axis = 1))
+    print clusters[0]
+    output = []
     for i in range(len(results1)-1):
-        if (results[i] != results[i+1] or results1[i]!=results1[i+1]):
-            print "previous:{} new:{}".format(i, i+1)
+        if (i-prev>=temporal_window*2 and (results[i] != results[i+1])):
+            print "previous:{} new:{} label:{} label2: {}".format(prev, i, results[i], results1[i])
+            output.append([prev,i])
+            prev = i
             change_pt = []
             change_pt.append(i)
+            change_pt.append(results[i])
             for i, value in enumerate(traj[i]):
                 change_pt.append(value)
             #print change_pt
             cp_times.append(change_pt)
-            #print change_pt
             for trans in transcript:
                 if i == trans[0]  or i == trans[1] :
                     score +=1
-            #prev = i
+
     print score
-    store_changepoints(results, cp_times)
+    store_changepoints(dataFile, output, cp_times)
     joblib.dump(best_gmm, 'best_gmm.p')
     best_gmm = joblib.load('best_gmm.p')
 
-
-            #plot_clusters(traj,clusters)
-
-
 def plot_clusters(traj, clusters):
+    """
+    Function not currently used, could be used for plotting clusters
+    """
     fig = plt.figure()
     ax = fig.add_subplot(111)
     scatter = ax.scatter(x,c=clusters,s=50)
@@ -167,12 +177,15 @@ def plot_clusters(traj, clusters):
     fig.show()
     plt.close
 def generateData(rootPath):
+    """
+    Loading the files of the task
+    """
     df = []
     s = []
     alpha = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']
     for i in range (len(alpha)):
         for j in range (1,6):
-            taskPath = 'Knot_Tying/kinematics/AllGestures/Knot_Tying_{}00{}.csv'.format(alpha[i], j)
+            taskPath = 'Knot_Tying/kinematics/AllGestures/Knot_Tying_{}00{}.txt'.format(alpha[i], j)
             taskFile = rootPath + taskPath
             transcriptFile = rootPath + 'Knot_Tying/transcriptions/Knot_Tying_{}00{}.txt'.format(alpha[i], j)
             videoFile = rootPath + 'Knot_Tying/video/Knot_Tying_{}00{}.avi'.format(alpha[i], j)
@@ -180,6 +193,9 @@ def generateData(rootPath):
     return j
 
 def generateTranscript(transcriptFile):
+    """
+    Generates the transcripts for the given task
+    """
     df = pd.read_csv(transcriptFile, header = None, delimiter = ' ')
     s = df.values.tolist()
     first_line = s[0][:]
@@ -230,7 +246,15 @@ def plot_labels(y_true, y_pred, figName = None):
         savefig(figName, dpi = 300)
     plt.close()
 
-def store_changepoints(cp = None, cp_time = None):
+def store_changepoints(filename, cp = None, cp_time = None):
+    """
+    Storing the changepoints of the first layer
+    """
+
+    filename = filename.replace(".txt", ".csv")
+    filename =filename
+    cp = pd.DataFrame(np.array(cp))
+    cp.to_csv(filename, sep='\t', encoding='utf-8')
     transitions = []
     transitions.append(cp_time)
     joblib.dump(cp_time, 'transitons.p')
@@ -238,46 +262,30 @@ def store_changepoints(cp = None, cp_time = None):
     generateClusters()
 
 def generateClusters():
+    """
+    Second layer of clustering
+    """
     super_clusters = []
     transitions = []
     transitions = np.array(joblib.load('transitons.p'))
     print transitions.shape
-    gmm = mixture.GaussianMixture(n_components = 10, covariance_type='full', max_iter = 10000, tol= 1e-5)
-    #print transitions[i].reshape(-1,1).shape
+    gmm = mixture.GaussianMixture(n_components = 5, covariance_type='diag', max_iter = 10000)
     gmm.fit(transitions)
     results = gmm.predict(transitions)
     super_clusters.append(results)
     for i in range(len(results)-1):
         if results[i]!=results[i+1]:
-            print transitions[i][0]
+            print "{} ".format(transitions[i][0])
 
     joblib.dump(super_clusters, 'super_clusters.p')
 
-    """for i in range(len(transitions)):
-        dist, cost, acc, path = dtw(transitions[0], transitions[i], dist=euclidean )
-        dtw_transitions.append(path)
-    joblib.dump(dtw_transitions,'dtw_transitions.p')"""
 
-    '''dtw_transitions = np.array(joblib.load('dtw_transitions.p'))
-    #print dtw_transitions
-    n_components = 5
-    covariance_type = 'full'
-    gmm = mixture.GaussianMixture(n_components=n_components, max_iter = 10000,covariance_type=covariance_type,  tol = 1e-7)
-    gmm.fit(transitions)
-    results = gmm.predict(dtw_transitions)
-    for i in range(len(results)-1):
-        if results[i]!= results[i+1]:
-            print "tranisition detected"
-'''
 def main():
     global root
     videoFile = root + 'Knot_Tying/video/Knot_Tying_B002_capture1.avi'
     dataFile = root + 'Knot_Tying/kinematics/AllGestures/Knot_Tying_B002.csv'
     transcriptFile = root + 'Knot_Tying/transcriptions/Knot_Tying_B002.txt'
     generateData(root)
-    #generateClusters()
-
-
 
 if __name__ == '__main__':
     main()
