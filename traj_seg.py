@@ -11,13 +11,16 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.spatial.distance import euclidean
 import sys
 from sys import argv
-
+import time
+global prev
 global root
 #'/home/uva-dsa1/Downloads/dVRK videos/Knot_Tying/kinematics/AllGestures'
 root = '/home/uva-dsa1/Downloads/dVRK videos/'
 transitions = []
 demonstrations = []
 def readData(dataFile, transcriptFile):
+    global prev
+    prev = 0
     try:
         df = pd.read_csv(dataFile, header = None, dtype = np.float64, delimiter = '     ')
         s = df.values.tolist()
@@ -108,7 +111,7 @@ def clusters(dataFile, demonstrations = None, transcripts = None):
     """
     First layer of clustering based on cartesian space
     """
-    temporal_window = 3
+    temporal_window = 2
     traj = demonstrations
     transcript = transcripts
     print demonstrations.shape
@@ -124,43 +127,79 @@ def clusters(dataFile, demonstrations = None, transcripts = None):
 
     for cv_type in cv_types:
         for n_components in n_components_range:
-            gmm = mixture.BayesianGaussianMixture(n_components = 20, max_iter = 10000,covariance_type=cv_type,  tol = 1e-7, weight_concentration_prior = 0.4, random_state = 100)
+            gmm = mixture.BayesianGaussianMixture(n_components = 15, covariance_type='full', max_iter = 10000, tol = 1e-7, random_state = 00)
+            #gmm = cluster.AgglomerativeClustering(linkage = 'average', n_clusters = 6)
+            start = time.time()
+            results = gmm.fit(traj)
+            end = time.time()
+            #gmm.predict(traj[0].reshape(1,-1))
+            print "time taken: {}".format(start-end)
             #gmm = mixture.DPGMM(n_components = 7, covariance_type='diag', n_iter = 10000, tol= 1e-4)
-            #gmm = mixture.GaussianMixture(n_components=n_components, max_iter = 10000,covariance_type=cv_type,  tol = 1e-5)
-            gmm.fit(traj)
+            #gmm = mixture.GaussianMixture(n_components=n_components, max_iter = 10000,covariance_type=cv_type,  tol = 1e-5, random_state = 500)
             results = gmm.predict(traj)
-
-            
-	print "L0: Clusters in DP-GMM", len(set(results))
+            best_gmm = gmm
     score = 0
     cp_times = []
     prev = 0
-    results = np.transpose(np.matrix(results))
-    print "results: {} traj: {}".format(results.shape, traj.shape)
-    clusters = np.sort(np.concatenate((results,traj), axis = 1))
-    print clusters[0]
-    output = []
-    for i in range(len(results1)-1):
-        if (i-prev>=temporal_window*2 and (results[i] != results[i+1])):
-            print "previous:{} new:{} label:{} label2: {}".format(prev, i, results[i], results1[i])
-            output.append([prev,i])
+    time_stamp = np.zeros((results.shape[0],1))
+    for i in range(len(time_stamp)):
+        time_stamp[i][0] = i
+    results = results.reshape(-1,1)
+    results = np.concatenate((results, time_stamp), axis = 1)
+    new_segments = np.concatenate((results, traj), axis = 1)
+    new_segments = np.sort(new_segments, axis = 0)
+    current_label = new_segments[0][0]
+    cluster_array = []
+    for i in range(new_segments.shape[0]):
+        if (new_segments[i][0]!=current_label):
+            current_label = new_segments[i][0]
+            subClusters(cluster_array)
+            cluster_array = []
+
+        else:
+            cluster_array.append(new_segments[i][1:])
+
+    #results = results.reshape(-1,1)
+    #print "checking results {} {}" .format(results.shape, traj.shape)
+    #traj = np.concatenate((traj, results), axis = 1)
+    #gmm = mixture.GaussianMixture(n_components=5, max_iter = 10000,covariance_type='full',  tol = 1e-5, random_state = 00)
+    #gmm.fit(traj)
+    #results = gmm.predict(traj)
+    '''transition_points = []
+    for i in range(len(results)-1):
+        if (results[i] != results[i+1] and i-prev>=2*temporal_window):
+            #print "previous:{} new:{}".format(prev+1, i)
+            transition_points.append([prev+1, i])
             prev = i
             change_pt = []
             change_pt.append(i)
-            change_pt.append(results[i])
             for i, value in enumerate(traj[i]):
                 change_pt.append(value)
-            #print change_pt
+
             cp_times.append(change_pt)
-            for trans in transcript:
+
+            for trans in transcripts:
                 if i == trans[0]  or i == trans[1] :
                     score +=1
 
     print score
-    store_changepoints(dataFile, output, cp_times)
+    store_changepoints(transcriptFile, transition_points, cp_times)
     joblib.dump(best_gmm, 'best_gmm.p')
-    best_gmm = joblib.load('best_gmm.p')
+    best_gmm = joblib.load('best_gmm.p')'''
 
+
+            #plot_clusters(traj,clusters)
+
+def subClusters(data):
+    global prev
+    gmm = mixture.BayesianGaussianMixture(n_components = 3, covariance_type = 'diag', max_iter = 10000,tol = 1e-7, random_state = 00)
+    gmm.fit(data)
+    sub_results = gmm.predict(data)
+
+    for i in range(len(sub_results)-1):
+        if sub_results[i]!=sub_results[1+i]:
+            print "subClusters: {}".format([prev,data[i][0], sub_results[i]])
+            prev = data[i][0]
 def plot_clusters(traj, clusters):
     """
     Function not currently used, could be used for plotting clusters
@@ -286,6 +325,7 @@ def main():
     dataFile = root + 'Knot_Tying/kinematics/AllGestures/Knot_Tying_B002.csv'
     transcriptFile = root + 'Knot_Tying/transcriptions/Knot_Tying_B002.txt'
     generateData(root)
+
 
 if __name__ == '__main__':
     main()

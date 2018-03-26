@@ -3,8 +3,7 @@ import cv2
 import matplotlib.pyplot as plt
 import sys
 from sys import argv
-from sklearn.mixture import GaussianMixture
-from sklearn import mixture
+from sklearn import preprocessing, mixture
 from sklearn.cluster import KMeans
 import itertools
 #from scipy import linalg
@@ -17,7 +16,7 @@ import pandas as pd
 
 global root
 
-root = '/home/uva-dsa1/Downloads/dVRK videos/Knot_Tying/'
+root = '/home/uva-dsa1/Downloads/dVRK videos/'
 homingFile = '/Users/mohammadsaminyasar/Downloads/JIGSAWS/homing.mov'
 
 def loadImage(file = None):
@@ -46,10 +45,12 @@ def bgsegm(backgroundFile = None):
     fgbg = cv2.bgsegm.createBackgroundSubtractorMOG(2000000)
     cap = cv2.VideoCapture(backgroundFile)
     bg_array = []
+    count = 0
     ret, frame = cap.read()
     while (ret):
         ret, frame = cap.read()
         if (ret == True):
+            count = count + 1
             #print "blur"
             #frame = cv2.GaussianBlur(frame,(3,3),0)
             #fgmask = fgbg.apply(frame)
@@ -62,9 +63,16 @@ def bgsegm(backgroundFile = None):
             center = np.uint8(center)
             res = center[label.flatten()]
             res2 = res.reshape((frame.shape))'''
-            #frame = cv2.threshold(frame,0,255,cv2.THRESH_BINARY+cv2.THRESH_OTSU)
 
-            bg_array.append(frame)
+
+             # Crop image
+
+
+            # Display cropped image
+            #cv2.imshow("Image", frame)
+
+            if (count%1==0):
+                bg_array.append(frame)
         else:
             return np.array(bg_array)
 
@@ -200,10 +208,28 @@ def edge_compute(imageFile=None):
 
 
 
-def adaptive_threshold(resuls = None):
-    print "null"
-
-
+def adaptive_threshold(imageFile = None):
+    frame_array = bgsegm(imageFile)
+    new_frames = []
+    diff_array = []
+    for i, frame in enumerate(frame_array):
+        new_frames.append(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY))
+    frame_array = new_frames
+    for i in range(len(new_frames)-1):
+        diff = cv2.absdiff(new_frames[i], new_frames[i+1])
+        diff = cv2.sumElems(diff)
+        diff_array.append(diff[0])
+    diff_array = np.array(diff_array)
+    diff_array = diff_array.reshape(-1,1)
+    print "shape: {}".format(diff_array.shape)
+    imageFile = imageFile.replace(".avi", ".png")
+    scaler = preprocessing.StandardScaler().fit(diff_array)
+    diff_array = scaler.transform(diff_array)
+    max_diff = 0.3*max(diff_array)
+    for i in range(diff_array.shape[0]):
+        if diff_array[i]>=max_diff:
+            print i
+    graph_plot(diff_array, diff_array, imageFile)
 
 def histogram_Extraction(imageFile=None):
     print "histogram_Extraction"
@@ -220,8 +246,8 @@ def histogram_Extraction(imageFile=None):
     count = 0
 
     for frame in frame_array:
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        hist = cv2.calcHist([frame], [0, 1,2], None, [64,64,64],[0, 256, 0, 256, 0,256])
+        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        hist = cv2.calcHist([frame], [0, 1], None, [16,8],[0, 256, 0, 256])
         #hist = cv2.calcHist([frame], [0], None, [64],[0, 256])
         hist = cv2.normalize(hist,hist)
         histogram_array.append(hist)
@@ -230,43 +256,27 @@ def histogram_Extraction(imageFile=None):
     #plotHistogram(histogram_array)
     diff_array = []
     for i in range (histogram_array.shape[0]-1):
-        diff = cv2.compareHist(histogram_array[i], histogram_array[i+1], 2)
+        diff = cv2.compareHist(histogram_array[i], histogram_array[i+1], 0)
         #print "frame no :{} difference :{} " .format(i,diff)
         diff_array.append(diff)
-        imageFile = imageFile.replace(".avi", ".jpg")
+    imageFile = imageFile.replace(".avi", ".jpg")
     diff_array = np.array(diff_array)
-    transition_features = []
-    temp = np.zeros((diff_array.shape[0],3))
-    for i in range(diff_array.shape[0]-2):
-        for j in range (3):
-            temp[i][j] = diff_array[i+j]
-        for j in range(i, i+100):
-            max_val = max(diff_array[i:i+100])
-    transition_features = np.array(temp)
-    print transition_features.shape
-    mean_diff = np.mean(diff_array)
-    std_diff = np.std(diff_array)
-    threshold = mean_diff #+ 6*std_diff
-    print threshold
-    cuts = []
-    gmm = GaussianMixture(n_components = 5, covariance_type = "full", max_iter = 10000)
-    gmm.fit(transition_features)
-    results = gmm.predict(transition_features)
-    print results
+    temporal_window = 2
+    diff_array = diff_array.reshape(-1,1)
+    gmm = mixture.GaussianMixture(n_components = 5, max_iter = 10000, tol = 1e-3)
+    gmm.fit(diff_array)
+    results = gmm.predict(diff_array)
     for i in range(len(results)-1):
         if results[i]!=results[i+1]:
             print i
-    for i in range (len(cuts)):
-        for j in range (diff_array.shape[0]):
-            if cuts[i] ==diff_array[j]:
-                print j
+
     graph_plot(diff_array, diff_array, imageFile)
     temp_array = diff_array
     diff_array = np.sort(diff_array)
     transcriptFile = imageFile.split('/')[7]
     print transcriptFile
     results = np.array(readTranscriptions(transcriptFile))
-    print results
+
     score = 0.0
     for i in range(results.shape[0]):
         for j in range (len(temp_array)):
@@ -341,7 +351,7 @@ def graph_plot(y_true, y_pred,figName = None):
         subplot_num = "32{}" .format(i+1)
         plt.subplot(int(subplot_num))
 
-        plt.plot(y_pred[i*(y_pred.shape[0]/6):(i+1)*y_pred.shape[0]/6], 'b')
+        #plt.plot(y_pred[i*(y_pred.shape[0]/6):(i+1)*y_pred.shape[0]/6], 'b')
         plt.plot(y_true[i*(y_pred.shape[0]/6):(i+1)*y_pred.shape[0]/6], 'r')
         plt.xlabel(x_label)
         plt.ylabel(y_label,fontsize = 5)
@@ -363,12 +373,12 @@ def clusters():
         if alphabets[a] == "H":
             num = [1,3,4,5]
         for n in range(len(num)):
-            imageFile = root + "video/Knot_Tying_{}00{}_capture1.avi" .format(alphabets[a], num[n])
+            imageFile = root + "Knot_Tying/video/Knot_Tying_{}00{}_capture1.avi" .format(alphabets[a], num[n])
             #sift_Video(imageFile)
             count = 0
             descr = []
             count_array = []
-            imageFile = "/home/uva-dsa1/Downloads/output.avi"
+            #imageFile = "/home/uva-dsa1/Downloads/output.avi"
             cap = cv2.VideoCapture(imageFile)
             ret, frame = cap.read()
             #edge_compute(imageFile)
@@ -457,6 +467,7 @@ def readTranscriptions(transcriptFile = None):
     return frame_boundary
     #print ": {} : {}".format(end_frame, gesture)
 def main():
+    videoFile = root + 'Knot_Tying/video/Knot_Tying_B001_capture1.avi'
     cv2.useOptimized()
     usage = "0:loadImage| 1:play_Video| 2:load_Video| 3:sift_Video| 4:foreground_Extraction"
     try:
@@ -478,7 +489,8 @@ def main():
     elif mode == "4":
         histogram_Extraction()
     elif mode == "5":
-        optical_flow()
+        adaptive_threshold(videoFile)
+        #optical_flow()
 
 if __name__ == '__main__':
     main()
