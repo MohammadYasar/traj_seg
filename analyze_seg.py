@@ -1,6 +1,8 @@
 import numpy as np
 import pandas as pd
-from sklearn import decomposition, mixture, preprocessing, externals
+from sklearn import decomposition, mixture, preprocessing, externals, covariance, ensemble, svm
+from pyemma import msm
+from matplotlib import pyplot as plt
 summary_traj = []
 
 def loadData(vidFile = None, kinFile = None, transFile = None):
@@ -93,17 +95,66 @@ def loopFiles(root):
                 makeSegmentations(kin, trans, task)
     doProcessing()
 
-
 def doProcessing():
     global summary_traj
     writeFile = '/home/uva-dsa1/Downloads/dVRK videos/Suturing/kinematics/AllGestures/summary.csv'
-
-
     cp = pd.DataFrame(data = np.array(summary_traj), columns = ['mean_x1', 'mean_y1', 'mean_z1', 'mean_x2', 'mean_y2', 'mean_z2', 'std_x1', 'std_y1', 'std_z1', 'std_x2', 'std_y2', 'std_z2', 'max_x1', 'max_y1', 'max_z1', 'max_x2', 'max_y2', 'max_z2', 'min_x1', 'min_y1', 'min_z1', 'min_x2', 'min_y2', 'min_z2', 'label'])
     cp.to_csv(writeFile, sep = ',')
+
+def detectAnomaly(sampleFile):
+    sampleTraj = externals.joblib.load(sampleFile)
+    markovAnomaly(sampleTraj, 2, 0.01)
+
+def getDistanceByPoint(data,model):
+    distance = pd.Series()
+    for i in range (0, len(data)):
+        Xa = np.array(data.loc[i])
+        Xb = model.cluster_centers_[model.labels_[i]-1]
+        distance.set_value(i, np.linalg.norm(Xa-Xb))
+    return distance
+
+def getTransitionMatrix(df):
+    df = np.array(df)
+    model = msm.estimate_markov_model(df,1)
+    return model.transition_matrix
+
+def markovAnomaly(df, windows_size, threshold):
+    transition_matrix = getTransitionMatrix(df)
+    real_threshold = threshold**windows_size
+    df_anomaly = []
+    for j in range (0, len(df)):
+        if (j<windows_size):
+            df_anomaly.append(0)
+        else:
+            sequence = df[j-window_size:j]
+            sequence = sequence.reset_index(drop=True)
+            df_anomaly.append(anomalyElement(sequence, real_threshold, transition_matrix))
+    return df_anomaly
+
+def elipticEnvelope(data):
+    data_1 = data
+    data_1[20] = data_1[20]*0.95
+    outliers_fraction = 0.2
+    envelope = covariance.EllipticEnvelope(contamination = outliers_fraction, random_state = 0)
+    envelope.fit(data_1)
+    df_class0 = pd.DataFrame(data_1)
+    df_class0['deviation'] = envelope.decision_function(data_1)
+    df_class0['anomaly'] = envelope.predict(data_1)
+    print len(df_class0['anomaly'])
+    time = np.zeros(len(df_class0['anomaly']))
+    print len(time)
+    for i in range(len(time)):
+        time[i] = i
+    fig, ax = plt.subplots()
+    a = df_class0.loc[df_class0['anomaly']==1]
+    print len(a)
+    #ax.plot(df_class0['time_epoch'], df_class0['value'], color = 'blue')
+    ax.scatter(time, df_class0['anomaly'], color = 'red')
+    plt.show()
+
 def main():
     root = '/home/uva-dsa1/Downloads/dVRK videos/'
-
-    loopFiles(root)
+    #loopFiles(root)
+    detectAnomaly('/home/uva-dsa1/Downloads/ML/traj_seg/segmented_trajectories/Suturing_B001G1.0.p')
 if __name__ == '__main__':
     main()
