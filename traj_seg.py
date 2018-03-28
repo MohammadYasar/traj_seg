@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 import itertools
-from sklearn import mixture, preprocessing, metrics, decomposition
+from sklearn import mixture, preprocessing, metrics, decomposition, cluster
 from sklearn.externals import joblib
 import matplotlib.pyplot as plt
 import matplotlib as mpl
@@ -12,12 +12,16 @@ from scipy.spatial.distance import euclidean
 import sys
 from sys import argv
 import time
+
 global prev
+
 global root
 #'/home/uva-dsa1/Downloads/dVRK videos/Knot_Tying/kinematics/AllGestures'
 root = '/home/uva-dsa1/Downloads/dVRK videos/'
 transitions = []
 demonstrations = []
+changepoints = None
+
 def readData(dataFile, transcriptFile):
     global prev
     prev = 0
@@ -36,12 +40,16 @@ def readData(dataFile, transcriptFile):
         for i in range (s.shape[0]):
             for j in range (s.shape[1]/2):
                 new_s[i][j] = s[i][j+s.shape[1]/2]
-
         s = np.array(new_s)
 
         '''
         new_s = np.zeros((s.shape[0], 6))
+
+        s = np.array(new_s)
+        new_s = np.zeros((s.shape[0], 7))
+
         for i, value in enumerate(s):
+            new_s[i][new_s.shape[1]-1] = i
             for j in range(3):#s.shape[1]/2):#, s.shape[1]):
                 new_s[i][j] = value[j+38]
                 new_s[i][j+3] = value[j+57]
@@ -63,7 +71,7 @@ def readData(dataFile, transcriptFile):
 
 def generate_transition_features(trajectory, temporal_window):
     X_dimension = trajectory.shape[1]
-    print "X dimension", str(X_dimension)
+    #print "X dimension", str(X_dimension)
     T = trajectory.shape[0]
     N = None
     for t in range(T - temporal_window):
@@ -107,6 +115,7 @@ def loadDemonstrations(dataFile, transcriptFile, videoFile):
         graph_plot(traj, traj, videoFile)
         clusters(transcriptFile, np.array(traj), np.array(transcript))
 
+
 def clusters(dataFile, demonstrations = None, transcripts = None):
     """
     First layer of clustering based on cartesian space
@@ -128,6 +137,24 @@ def clusters(dataFile, demonstrations = None, transcripts = None):
     for cv_type in cv_types:
         for n_components in n_components_range:
             gmm = mixture.BayesianGaussianMixture(n_components = 15, covariance_type='full', max_iter = 10000, tol = 1e-7, random_state = 00)
+
+def append_cp_array(cp):
+    global changepoints
+    changepoints = safe_concatenate(changepoints, cp)
+
+def clusters(transcriptFile, demonstrations = None, transcripts = None):
+    #for i in range (demonstrations.shape[0]):
+    traj = demonstrations
+    temporal_window = 2
+    traj = generate_transition_features(traj, temporal_window)
+    print traj.shape
+    n_components_range = range(5,6)
+    cv_types = ['full']
+
+    for cv_type in cv_types:
+        for n_components in n_components_range:
+            gmm = mixture.BayesianGaussianMixture(n_components = 15, covariance_type='full', max_iter = 1000, tol = 1e-5, random_state = 00)
+
             #gmm = cluster.AgglomerativeClustering(linkage = 'average', n_clusters = 6)
             start = time.time()
             results = gmm.fit(traj)
@@ -148,6 +175,9 @@ def clusters(dataFile, demonstrations = None, transcripts = None):
     results = np.concatenate((results, time_stamp), axis = 1)
     new_segments = np.concatenate((results, traj), axis = 1)
     new_segments = np.sort(new_segments, axis = 0)
+
+    print new_segments[1][1]
+
     current_label = new_segments[0][0]
     cluster_array = []
     for i in range(new_segments.shape[0]):
@@ -165,7 +195,11 @@ def clusters(dataFile, demonstrations = None, transcripts = None):
     #gmm = mixture.GaussianMixture(n_components=5, max_iter = 10000,covariance_type='full',  tol = 1e-5, random_state = 00)
     #gmm.fit(traj)
     #results = gmm.predict(traj)
+
     '''transition_points = []
+
+    transition_points = []
+
     for i in range(len(results)-1):
         if (results[i] != results[i+1] and i-prev>=2*temporal_window):
             #print "previous:{} new:{}".format(prev+1, i)
@@ -191,10 +225,19 @@ def clusters(dataFile, demonstrations = None, transcripts = None):
             #plot_clusters(traj,clusters)
 
 def subClusters(data):
+
     global prev
     gmm = mixture.BayesianGaussianMixture(n_components = 3, covariance_type = 'diag', max_iter = 10000,tol = 1e-7, random_state = 00)
     gmm.fit(data)
     sub_results = gmm.predict(data)
+
+    gmm = mixture.GaussianMixture(n_components = 3, covariance_type = 'full', max_iter = 10000,tol = 1e-5, random_state = 00)
+    gmm.fit(data)
+    sub_results = gmm.predict(data)
+    for i in range(len(sub_results)-1):
+        if sub_results[i]!=sub_results[1+i]:
+            print "subClusters: {}".format(data[i][0])
+
 
     for i in range(len(sub_results)-1):
         if sub_results[i]!=sub_results[1+i]:
@@ -260,7 +303,7 @@ def graph_plot(y_true, y_pred, figName = None):
 def plot_labels(y_true, y_pred, figName = None):
     y_true = np.transpose(np.array(y_true))
     y_pred = np.transpose(np.array(y_pred))
-    print y_true.shape
+    #print y_true.shape
     #e_traj = np.transpose(np.array(e_traj))
     no_graphs = y_true.shape[0]
 
@@ -286,6 +329,7 @@ def plot_labels(y_true, y_pred, figName = None):
     plt.close()
 
 def store_changepoints(filename, cp = None, cp_time = None):
+
     """
     Storing the changepoints of the first layer
     """
@@ -294,11 +338,16 @@ def store_changepoints(filename, cp = None, cp_time = None):
     filename =filename
     cp = pd.DataFrame(np.array(cp))
     cp.to_csv(filename, sep='\t', encoding='utf-8')
+
     transitions = []
+    filename = filename.replace(".txt", ".csv")
+    cp = pd.DataFrame(data = np.array(cp))
+    cp.to_csv(filename, sep = ',')
     transitions.append(cp_time)
     joblib.dump(cp_time, 'transitons.p')
     #print transitions
     generateClusters()
+
 
 def generateClusters():
     """
