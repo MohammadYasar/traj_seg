@@ -106,10 +106,10 @@ def doProcessing():
 def detectAnomaly(sampleFile):
     sampleTraj = externals.joblib.load(sampleFile)
 
-    markovAnomaly(sampleTraj, 2, 0.01)
+    #markovAnomaly(sampleTraj, 2, 0.01)
     gpVerification(sampleTraj)
 
-    
+
 
 
 def getDistanceByPoint(data,model):
@@ -183,7 +183,7 @@ def gpVerification(data):
 def main():
     root = '/home/uva-dsa1/Downloads/dVRK videos/'
     #loopFiles(root)
-    detectAnomaly('/home/uva-dsa1/Downloads/ML/traj_seg/segmented_trajectories/Suturing_B001G1.0.p')
+    detectAnomaly('/home/uva-dsa1/Downloads/ML/traj_seg/segmented_trajectories/Suturing_B001G3.0.p') #Model trained on G3 
 
 if __name__ == '__main__':
     main()
