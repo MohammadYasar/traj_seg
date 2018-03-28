@@ -1,7 +1,8 @@
 import numpy as np
 import pandas as pd
+
 from sklearn import decomposition, mixture, preprocessing, externals, covariance, ensemble, svm, gaussian_process, model_selection
-#from pyemma import msm
+from pyemma import msm
 from matplotlib import pyplot as plt
 
 summary_traj = []
@@ -104,8 +105,12 @@ def doProcessing():
 
 def detectAnomaly(sampleFile):
     sampleTraj = externals.joblib.load(sampleFile)
-    #markovAnomaly(sampleTraj, 2, 0.01)
+
+    markovAnomaly(sampleTraj, 2, 0.01)
     gpVerification(sampleTraj)
+
+    
+
 
 def getDistanceByPoint(data,model):
     distance = pd.Series()
@@ -154,6 +159,7 @@ def elipticEnvelope(data):
     ax.scatter(time, df_class0['anomaly'], color = 'red')
     plt.show()
 
+
 def gpVerification(data):
     X = np.array(data)
     y = np.zeros((X.shape[0], X.shape[1]))
@@ -177,6 +183,7 @@ def gpVerification(data):
 def main():
     root = '/home/uva-dsa1/Downloads/dVRK videos/'
     #loopFiles(root)
-    detectAnomaly('/home/uva-dsa1/Downloads/ML/traj_seg/segmented_trajectories/Suturing_I005G3.0.p')
+    detectAnomaly('/home/uva-dsa1/Downloads/ML/traj_seg/segmented_trajectories/Suturing_B001G1.0.p')
+
 if __name__ == '__main__':
     main()
