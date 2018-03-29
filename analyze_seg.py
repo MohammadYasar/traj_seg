@@ -1,14 +1,14 @@
 import numpy as np
 import pandas as pd
-
 from sklearn import decomposition, mixture, preprocessing, externals, covariance, ensemble, svm, gaussian_process, model_selection
-from pyemma import msm
+#from pyemma import msm
 from matplotlib import pyplot as plt
 
 summary_traj = []
 
 def loadData(vidFile = None, kinFile = None, transFile = None):
     kin = []
+    vel = []
     trans = []
     try:
         df = pd.read_csv(transFile, header = None, delimiter = ' ')
@@ -16,30 +16,35 @@ def loadData(vidFile = None, kinFile = None, transFile = None):
         newtrans = labelProcess(trans)
         df = pd.read_csv(kinFile, header = None, dtype = np.float64, delimiter = '     ')
         kin = df.values.tolist()
-        kin = extractCart(kin)
+        kin, vel = extractCart(kin)
 
     except IOError:
         print "no file"
         return [], []
 
-    return newtrans, kin
+    return newtrans, kin, vel
 
 def extractCart(kinData):
     kinData = np.array(kinData)
     new_s = np.zeros((kinData.shape[0], 6))
+    new_v = np.zeros((kinData.shape[0],14))
     for i, value in enumerate(kinData):
         for j in range(3):
             new_s[i][j] = value[j+38]
             new_s[i][j+3] = value[j+57]
-    scaler = preprocessing.MinMaxScaler().fit(new_s)
+        for k in range(7):
+            new_v[i][j] = value[k+50]
+            new_v[i][j+7] = value[k+69]
+    scaler = preprocessing.MinMaxScaler().fit(new_v)
+    scaler1 = preprocessing.MinMaxScaler().fit(new_s)
     #externals.joblib.dump(scaler, 'scaler.p')
     #scaler = externals.joblib.load('scaler.p')
-
-    new_s = scaler.transform(new_s)
+    #new_v = scaler.transform(new_v)
+    new_s = scaler1.transform(new_s)
     #new_s = preprocessing.normalize(new_s)
     mean, std, max, min = np.mean(new_s), np.std(new_s), np.amax(new_s), np.amin(new_s)
     #print "global mean: {} global std: {} global max: {} global min : {}".format(mean,std, max, min)
-    return new_s
+    return new_s,new_v
 
 def labelProcess(newtrans):
     newtrans = np.array(newtrans)
@@ -53,20 +58,24 @@ def labelProcess(newtrans):
 
     return trans
 
-def makeSegmentations(kinematics, transcripts,task):
+def makeSegmentations(kinematics, transcripts, vel, task):
     transcripts = np.sort(transcripts, axis = 0)
     seg_kinematics = []
+    seg_vel = []
     prev_seg = transcripts[0][transcripts.shape[1]-1]
     for i in range(transcripts.shape[0]):
         if transcripts[i][transcripts.shape[1]-1] != prev_seg:
-            processSegments(np.array(seg_kinematics), prev_seg, task)
+            processSegments(np.array(seg_kinematics),np.array(seg_vel), prev_seg, task)
             prev_seg = transcripts[i][transcripts.shape[1]-1]
             seg_kinematics = []
+            seg_vel = []
         for n in range (int(transcripts[i][0]), int(transcripts[i][1])):
             seg_kinematics.append(kinematics[n])
-    processSegments(np.array(seg_kinematics), prev_seg, task)
+            seg_vel.append(vel[n])
+    processSegments(np.array(seg_kinematics), np.array(seg_vel), prev_seg, task)
 
-def processSegments(kinData, prev_seg, task):
+def processSegments(kinData, vel, prev_seg, task):
+    print vel.shape
     global summary_traj
     gesture = 'segmented_trajectories/{}G{}.p'.format(task,prev_seg)
     externals.joblib.dump(kinData, gesture)
@@ -76,6 +85,10 @@ def processSegments(kinData, prev_seg, task):
     _std = np.std(kinData, axis=0)
     _max = np.amax(kinData, axis = 0)
     _min = np.amin(kinData, axis = 0)
+    v_mean = np.mean(vel)
+    v_max = np.amax(vel)
+    v_min = np.amin(vel)
+    print "max {} min {} mean {}".format(v_max, v_min, v_mean)
     temp_array = np.concatenate((np.concatenate((_mean, _std), axis = 0), np.concatenate((_max, _min), axis = 0)), axis = 0)
     temp_array = np.append(temp_array,prev_seg)
 
@@ -91,10 +104,10 @@ def loopFiles(root):
             transcriptFile = root + 'Suturing/transcriptions/Suturing_{}00{}.txt'.format(alpha[i], j)
             videoFile = root + 'Suturing/video/Suturing_{}00{}.avi'.format(alpha[i], j)
             print taskFile
-            trans, kin = loadData(vidFile = videoFile, kinFile = taskFile, transFile = transcriptFile)
+            trans, kin, vel = loadData(vidFile = videoFile, kinFile = taskFile, transFile = transcriptFile)
             task = taskFile.replace('.txt','').split('/')[8]
             if len(trans)>0 and len(kin)>0:
-                makeSegmentations(kin, trans, task)
+                makeSegmentations(kin, trans, vel, task)
     doProcessing()
 
 def doProcessing():
@@ -172,18 +185,21 @@ def gpVerification(data):
     #gpr = gaussian_process.GaussianProcessRegressor(n_restarts_optimizer = 5, kernel = kernel)
     #gpr.fit(X,y)
     gpr = externals.joblib.load('gpr.p')
-    gpr.predict(X)
-    y[0]=y[0]*-.1
+    z = gpr.predict(X)
+    #print z[0]
+    #print y[0]*-1
+    y[0]=y[0][3]*-1
 
-    print(gpr.log_marginal_likelihood(theta=None, eval_gradient=False))
     print gpr.score(X, y)
     #externals.joblib.dump(gpr,'gpr.p')
 
 
 def main():
-    root = '/home/uva-dsa1/Downloads/dVRK videos/'
-    #loopFiles(root)
-    detectAnomaly('/home/uva-dsa1/Downloads/ML/traj_seg/segmented_trajectories/Suturing_B001G3.0.p') #Model trained on G3 
+    #root = '/home/uva-dsa1/Downloads/dVRK videos/'
+    root = '/Users/mohammadsaminyasar/Downloads/JIGSAWS/'
+    loopFiles(root)
+    #'/Users/mohammadsaminyasar/Downloads/Lfd/segmented_trajectories'
+    #detectAnomaly('/Users/mohammadsaminyasar/Downloads/Lfd/segmented_trajectories/Suturing_B001G3.0.p') #Model trained on G3
 
 if __name__ == '__main__':
     main()
