@@ -1,15 +1,17 @@
 import numpy as np
 import pandas as pd
 from sklearn import decomposition, mixture, preprocessing, externals, covariance, ensemble, svm, gaussian_process, model_selection
-#from pyemma import msm
 from matplotlib import pyplot as plt
+from pylab import savefig
 
+imageFile = None
 summary_traj = []
 
 def loadData(vidFile = None, kinFile = None, transFile = None):
     kin = []
     vel = []
     trans = []
+    setImageFile(transFile)
     try:
         df = pd.read_csv(transFile, header = None, delimiter = ' ')
         trans = df.values.tolist()
@@ -20,9 +22,18 @@ def loadData(vidFile = None, kinFile = None, transFile = None):
 
     except IOError:
         print "no file"
-        return [], []
+        return [], [], []
 
     return newtrans, kin, vel
+
+def setImageFile(transFile):
+    global imageFile
+    imageFile =transFile.replace('.txt', '.jpg')
+    imageFile = imageFile.replace('/transcriptions', '')
+
+def getImageFile():
+    global imageFile
+    return imageFile
 
 def extractCart(kinData):
     kinData = np.array(kinData)
@@ -35,6 +46,7 @@ def extractCart(kinData):
         for k in range(7):
             new_v[i][j] = value[k+50]
             new_v[i][j+7] = value[k+69]
+
     scaler = preprocessing.MinMaxScaler().fit(new_v)
     scaler1 = preprocessing.MinMaxScaler().fit(new_s)
     #externals.joblib.dump(scaler, 'scaler.p')
@@ -59,6 +71,7 @@ def labelProcess(newtrans):
     return trans
 
 def makeSegmentations(kinematics, transcripts, vel, task):
+    acc = getAcceleration(vel, transcripts)
     transcripts = np.sort(transcripts, axis = 0)
     seg_kinematics = []
     seg_vel = []
@@ -75,25 +88,44 @@ def makeSegmentations(kinematics, transcripts, vel, task):
     processSegments(np.array(seg_kinematics), np.array(seg_vel), prev_seg, task)
 
 def processSegments(kinData, vel, prev_seg, task):
-    print vel.shape
+
     global summary_traj
     gesture = 'segmented_trajectories/{}G{}.p'.format(task,prev_seg)
     externals.joblib.dump(kinData, gesture)
-    print kinData.shape
-    _mean, _std, _max, _min = [], [], [], []
-    _mean = np.mean(kinData, axis=0)
-    _std = np.std(kinData, axis=0)
-    _max = np.amax(kinData, axis = 0)
-    _min = np.amin(kinData, axis = 0)
-    v_mean = np.mean(vel)
-    v_max = np.amax(vel)
-    v_min = np.amin(vel)
-    print "max {} min {} mean {}".format(v_max, v_min, v_mean)
-    temp_array = np.concatenate((np.concatenate((_mean, _std), axis = 0), np.concatenate((_max, _min), axis = 0)), axis = 0)
-    temp_array = np.append(temp_array,prev_seg)
 
-    summary_traj.append(temp_array)
-    #print "prev_seg : {}, mean: {} std: {} max: {} min : {}".format(prev_seg,mean,std, max, min)
+    _mean, _std, _max, _min = [], [], [], []
+    l_mean = np.mean(kinData[:,0:3])
+    r_mean = np.mean(kinData[:,3:6])
+    l_std = np.std(kinData[:,0:3])
+    r_std = np.std(kinData[:,3:6])
+    l_max = np.amax(kinData[:,0:3])
+    r_max = np.amax(kinData[:,3:6])
+    l_min = np.amin(kinData[:,0:3])
+    r_min = np.amin(kinData[:,3:6])
+
+    vl_mean = np.mean(vel[:,0:3])
+    vlw_mean = np.mean(vel[:,3:6])
+    vlg_mean = np.mean(vel[:,6])
+    vr_mean = np.mean(vel[:,7:10])
+    vrw_mean = np.mean(vel[:,10:13])
+    vrg_mean = np.mean(vel[:,13])
+
+    vl_max = np.amax(vel[:,0:3])
+    vlw_max = np.amax(vel[:,3:6])
+    vlg_max = np.amax(vel[:,6])
+    vr_max = np.amax(vel[:,7:10])
+    vrw_max = np.amax(vel[:,10:13])
+    vrg_max = np.amax(vel[:,13])
+
+    vl_min = np.amin(vel[:,0:3])
+    vlw_min = np.amin(vel[:,3:6])
+    vlg_min = np.amin(vel[:,6])
+    vr_min = np.amin(vel[:,7:10])
+    vrw_min = np.amin(vel[:,10:13])
+    vrg_min = np.amin(vel[:,13])
+
+    summary_traj.append([prev_seg, l_mean, r_mean, l_std, r_std, l_max, r_max, l_min, r_min, vl_mean, vr_mean, vl_max, vr_max, vl_min, vr_min])
+
 
 def loopFiles(root):
     alpha = ['B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']
@@ -112,18 +144,14 @@ def loopFiles(root):
 
 def doProcessing():
     global summary_traj
-    writeFile = '/home/uva-dsa1/Downloads/dVRK videos/Suturing/kinematics/AllGestures/summary.csv'
-    cp = pd.DataFrame(data = np.array(summary_traj), columns = ['mean_x1', 'mean_y1', 'mean_z1', 'mean_x2', 'mean_y2', 'mean_z2', 'std_x1', 'std_y1', 'std_z1', 'std_x2', 'std_y2', 'std_z2', 'max_x1', 'max_y1', 'max_z1', 'max_x2', 'max_y2', 'max_z2', 'min_x1', 'min_y1', 'min_z1', 'min_x2', 'min_y2', 'min_z2', 'label'])
+    writeFile = '/Users/mohammadsaminyasar/Downloads/JIGSAWS/Suturing/kinematics/AllGestures/summary.csv'
+    cp = pd.DataFrame(data = np.array(summary_traj), columns = ['seg','l_mean', 'r_mean', 'l_std', 'r_std', 'l_max', 'r_max', 'l_min', 'r_min', 'vl_mean',  'vr_mean', 'vl_max', 'vr_max', 'vl_min', 'vr_min'])
     cp.to_csv(writeFile, sep = ',')
 
 def detectAnomaly(sampleFile):
     sampleTraj = externals.joblib.load(sampleFile)
-
     #markovAnomaly(sampleTraj, 2, 0.01)
     gpVerification(sampleTraj)
-
-
-
 
 def getDistanceByPoint(data,model):
     distance = pd.Series()
@@ -193,6 +221,32 @@ def gpVerification(data):
     print gpr.score(X, y)
     #externals.joblib.dump(gpr,'gpr.p')
 
+def getAcceleration (velData, transcripts):
+    acceleration = np.zeros((velData.shape[0], 2))
+    for i in range(1,velData.shape[0]):
+        acceleration[i-1][0] = (np.mean(velData[i,0:3]) - np.mean(velData[i-1,0:3]))/(1./30.)
+        acceleration[i-1][1] = (np.mean(velData[i,7:10]) - np.mean(velData[i-1,7:10]))/(1./30.)
+
+    graph_plot(acceleration = acceleration, transcripts=transcripts)
+    return acceleration
+
+def graph_plot(acceleration, transcripts, root = '/Users/mohammadsaminyasar/Downloads/JIGSAWS/'):
+    figName = getImageFile().replace(root, '')
+    figName = root + figName
+    figName = figName.replace('/Suturing/', '/Suturing/acceleration/')
+    plt.grid(False)
+    y_label = "acceleration value"
+    x_label = "steps in trajectory"
+    plt.plot(acceleration[:,0], 'b')
+    plt.plot(acceleration[:,1], 'r')
+    plt.xlabel(x_label)
+    plt.ylabel(y_label,fontsize = 3)
+    for i in range(transcripts.shape[0]):
+        plt.axvline(transcripts[i][0],color='k', linestyle='--')
+        plt.text(transcripts[i][0],3.5, int(transcripts[i][2]), fontsize = 4)
+
+    savefig(figName, dpi = 600, aspect = 'auto')
+    plt.close()
 
 def main():
     #root = '/home/uva-dsa1/Downloads/dVRK videos/'
